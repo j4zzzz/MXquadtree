@@ -1,0 +1,352 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <title>MX QuadTree Visualization with Operations</title>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, user-scalable=no, minimum-scale=1.0, maximum-scale=1.0">
+    <link type="text/css" rel="stylesheet" href="main.css">
+    <style>
+        body {
+            background-color: black; /* Fondo negro */
+            color: white; /* Texto blanco */
+        }
+
+        #treeContainer {
+            position: absolute;
+            right: 0;
+            top: 0;
+            width: 30%;
+            height: 100%;
+            overflow: auto;
+            pointer-events: none;
+        }
+
+        .treeNode {
+            color: cyan; /* Color de los nodos del árbol */
+        }
+    </style>
+</head>
+<body>
+
+<div id="info">
+    <a href="https://threejs.org" target="_blank" rel="noopener">three.js</a> webgpu - MX QuadTree Visualization<br />
+    Inserción, búsqueda y eliminación de nodos con coordenadas
+</div>
+
+<!-- Botones para las operaciones -->
+<button id="insertBtn">Insertar Nodo</button>
+<button id="searchBtn">Buscar Nodo</button>
+<button id="deleteBtn">Eliminar Nodo</button>
+
+<!-- Mensaje de estado -->
+<div id="statusMessage"></div>
+
+<!-- Contenedor para el árbol -->
+<div id="treeContainer">
+    <h3>Árbol de Nodos Insertados</h3>
+    <pre id="treeOutput"></pre>
+</div>
+
+<script type="importmap">
+    {
+        "imports": {
+            "three": "../build/three.webgpu.js",
+            "three/addons/": "./jsm/"
+        }
+    }
+</script>
+
+<script type="module">
+
+    import * as THREE from 'three';
+    import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+
+    let camera, scene, renderer, nodes = [];
+    let maxLevel = 4;  // Máximo nivel de profundidad del QuadTree
+    let statusMessage = document.getElementById("statusMessage");
+    let treeOutput = document.getElementById("treeOutput");
+    
+    // Estructura del MX QuadTree
+    class MXQuadTree {
+        constructor(x, y, size, level) {
+            this.x = x; // Coordenada central X del nodo
+            this.y = y; // Coordenada central Y del nodo
+            this.size = size; // Tamaño del nodo
+            this.level = level; // Nivel de profundidad
+            this.nodes = []; // Nodos hijos
+            this.capacity = 1; // Capacidad de cada nodo antes de subdividirse
+            this.divided = false; // Si ya está dividido en cuadrantes
+            this.points = []; // Puntos en este nodo
+        }
+
+        insert(x, y) {
+            if (!this.contains(x, y)) return false;
+
+            if (this.points.length < this.capacity && !this.divided) {
+                this.points.push({x, y});
+                return true;
+            }
+
+            if (!this.divided) {
+                this.subdivide();
+            }
+
+            for (let node of this.nodes) {
+                if (node.insert(x, y)) return true;
+            }
+
+            return false;
+        }
+
+        subdivide() {
+            let half = this.size / 2;
+            let level = this.level + 1;
+            this.nodes.push(new MXQuadTree(this.x - half / 2, this.y - half / 2, half, level)); // Cuadrante 1
+            this.nodes.push(new MXQuadTree(this.x + half / 2, this.y - half / 2, half, level)); // Cuadrante 2
+            this.nodes.push(new MXQuadTree(this.x - half / 2, this.y + half / 2, half, level)); // Cuadrante 3
+            this.nodes.push(new MXQuadTree(this.x + half / 2, this.y + half / 2, half, level)); // Cuadrante 4
+            this.divided = true;
+        }
+
+        contains(x, y) {
+            return (x >= this.x - this.size / 2 && x < this.x + this.size / 2 &&
+                    y >= this.y - this.size / 2 && y < this.y + this.size / 2);
+        }
+
+        find(x, y) {
+            if (!this.contains(x, y)) return false;
+
+            for (let point of this.points) {
+                if (point.x === x && point.y === y) return true;
+            }
+
+            if (this.divided) {
+                for (let node of this.nodes) {
+                    if (node.find(x, y)) return true;
+                }
+            }
+
+            return false;
+        }
+
+        remove(x, y) {
+            if (!this.contains(x, y)) return false;
+
+            this.points = this.points.filter(point => point.x !== x || point.y !== y);
+            if (this.divided) {
+                for (let node of this.nodes) {
+                    if (node.remove(x, y)) return true;
+                }
+            }
+            return true;
+        }
+    }
+
+    let mx_quadTree = new MXQuadTree(0, 0, 4, 0);
+
+    init();
+    render();
+
+    function init() {
+        const container = document.createElement('div');
+        document.body.appendChild(container);
+
+        camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.25, 100);
+        camera.position.set(5, 5, 5);
+
+        scene = new THREE.Scene();
+
+        createMXQuadTreeBoundary(0, 0, 0, 4, 0);
+
+        renderer = new THREE.WebGPURenderer({ antialias: true });
+        renderer.setPixelRatio(window.devicePixelRatio);
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        container.appendChild(renderer.domElement);
+
+        const controls = new OrbitControls(camera, renderer.domElement);
+        controls.minDistance = 2;
+        controls.maxDistance = 20;
+        controls.update();
+
+        document.getElementById("insertBtn").addEventListener("click", () => promptForCoordinates(insertNode));
+        document.getElementById("searchBtn").addEventListener("click", () => promptForCoordinates(searchNode));
+        document.getElementById("deleteBtn").addEventListener("click", () => promptForCoordinates(deleteNode));
+
+        window.addEventListener('resize', onWindowResize);
+    }
+
+    function promptForCoordinates(action) {
+        const x = parseFloat(prompt("Ingrese la coordenada X:"));
+        const y = parseFloat(prompt("Ingrese la coordenada Y:"));
+
+        if (isNaN(x) || isNaN(y)) {
+            statusMessage.textContent = "Coordenadas inválidas.";
+        } else {
+            action(x, y);
+        }
+    }
+
+    function insertNode(x, y) {
+        if (mx_quadTree.find(x, y)) {
+            statusMessage.textContent = `El nodo en (${x}, ${y}) ya existe.`;
+        } else {
+            mx_quadTree.insert(x, y);
+            const material = new THREE.MeshBasicMaterial({ color: 0x0000ff, wireframe: true });
+            const newNode = createQuadTreeNode(x, y, 0, 0.2, material);
+            nodes.push(newNode);
+            statusMessage.textContent = `Nodo insertado en (${x}, ${y}).`;
+            updateTree();
+        }
+    }
+
+    function createQuadTreeNode(x, y, z, size, material) {
+        const geometry = new THREE.BoxGeometry(size, size, size);
+        const node = new THREE.Mesh(geometry, material);
+        node.position.set(x, y, z);
+        scene.add(node);
+        render();
+        return node;
+    }
+
+    function searchNode(x, y) {
+        if (mx_quadTree.find(x, y)) {
+            const node = nodes.find(node => node.position.x === x && node.position.y === y);
+            if (node) {
+                const originalMaterial = node.material;
+                node.material = new THREE.MeshBasicMaterial({ color: 0xff0000 });
+                render();
+                setTimeout(() => {
+                    node.material = originalMaterial;
+                    render();
+                }, 1000);
+            }
+            statusMessage.textContent = `Nodo encontrado en (${x}, ${y}).`;
+        } else {
+            statusMessage.textContent = `Nodo en (${x}, ${y}) no encontrado.`;
+        }
+    }
+
+    function deleteNode(x, y) {
+        if (mx_quadTree.find(x, y)) {
+            mx_quadTree.remove(x, y);
+            const nodeIndex = nodes.findIndex(node => node.position.x === x && node.position.y === y);
+            if (nodeIndex !== -1) {
+                const node = nodes[nodeIndex];
+                scene.remove(node);
+                nodes.splice(nodeIndex, 1);
+                render();
+                statusMessage.textContent = `Nodo en (${x}, ${y}) eliminado.`;
+                updateTree();
+            }
+        } else {
+            statusMessage.textContent = `Nodo en (${x}, ${y}) no existe para eliminar.`;
+        }
+    }
+
+    function onWindowResize() {
+        camera.aspect = window.innerWidth / window.innerHeight;
+        camera.updateProjectionMatrix();
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        render();
+    }
+
+    function render() {
+        renderer.render(scene, camera);
+    }
+
+    function createMXQuadTreeBoundary(x, y, z, size, level) {
+        const material = new THREE.LineBasicMaterial({ color: 0xffffff });
+        const half = size / 2;
+        const points = [
+            new THREE.Vector3(x - half, y - half, z),
+            new THREE.Vector3(x + half, y - half, z),
+            new THREE.Vector3(x + half, y + half, z),
+            new THREE.Vector3(x - half, y + half, z),
+            new THREE.Vector3(x - half, y - half, z)
+        ];
+        const geometry = new THREE.BufferGeometry().setFromPoints(points);
+        const boundary = new THREE.Line(geometry, material);
+        scene.add(boundary);
+
+        if (level < maxLevel) {
+            const newLevel = level + 1;
+            createMXQuadTreeBoundary(x - half / 2, y - half / 2, z, size / 2, newLevel);
+            createMXQuadTreeBoundary(x + half / 2, y - half / 2, z, size / 2, newLevel);
+            createMXQuadTreeBoundary(x - half / 2, y + half / 2, z, size / 2, newLevel);
+            createMXQuadTreeBoundary(x + half / 2, y + half / 2, z, size / 2, newLevel);
+        }
+    }
+
+    function createTreeNode(x, y, size, depth, parent = null) {
+    // Crear geometría de círculo para el nodo
+    const geometry = new THREE.CircleGeometry(size, 32);
+    const material = new THREE.MeshBasicMaterial({ color: 0x00ff00 });
+    const node = new THREE.Mesh(geometry, material);
+
+    // Posicionar el nodo en el espacio basado en su profundidad
+    const spacing = 1.5 / Math.pow(2, depth); // Espaciado basado en profundidad
+    node.position.set(x * spacing, y * spacing, 0);
+    
+    // Si tiene un nodo padre, dibujar una línea que lo conecte con el padre
+    if (parent) {
+        const lineMaterial = new THREE.LineBasicMaterial({ color: 0xffffff });
+        const points = [];
+        points.push(new THREE.Vector3(parent.position.x, parent.position.y, 0));
+        points.push(new THREE.Vector3(node.position.x, node.position.y, 0));
+        const lineGeometry = new THREE.BufferGeometry().setFromPoints(points);
+        const line = new THREE.Line(lineGeometry, lineMaterial);
+        scene.add(line);  // Añadir la línea a la escena
+    }
+
+    scene.add(node);  // Añadir el nodo a la escena
+    render();  // Actualizar la visualización
+
+    return node;
+}
+
+    // Función para organizar los nodos del árbol MX QuadTree visualmente
+    function arrangeQuadTreeNodes(node, depth = 0, xOffset = 0, yOffset = 0, size = 10) {
+		const spacing = size / Math.pow(2, depth);  // Espaciado que disminuye con la profundidad del árbol
+
+		// Asignar la posición al nodo actual, basado en su profundidad y el tamaño del cuadrante
+		node.position.set(xOffset, yOffset, 0);
+
+		// Si el nodo tiene hijos, los organizamos en sus respectivas posiciones (noroeste, noreste, suroeste, sureste)
+		if (node.children.length > 0) {
+			// Posiciones relativas para cada uno de los cuatro hijos
+			let nwOffset = [xOffset - spacing / 2, yOffset + spacing / 2];  // Noroeste
+			let neOffset = [xOffset + spacing / 2, yOffset + spacing / 2];  // Noreste
+			let swOffset = [xOffset - spacing / 2, yOffset - spacing / 2];  // Suroeste
+			let seOffset = [xOffset + spacing / 2, yOffset - spacing / 2];  // Sureste
+
+			// Organizar los nodos hijos recursivamente
+			arrangeQuadTreeNodes(node.children[0], depth + 1, nwOffset[0], nwOffset[1], size);
+			arrangeQuadTreeNodes(node.children[1], depth + 1, neOffset[0], neOffset[1], size);
+			arrangeQuadTreeNodes(node.children[2], depth + 1, swOffset[0], swOffset[1], size);
+			arrangeQuadTreeNodes(node.children[3], depth + 1, seOffset[0], seOffset[1], size);
+		}
+	}
+
+
+    // Función para actualizar el árbol QuadTree y organizar visualmente los nodos
+    function updateTree() {
+		const output = [];
+		traverseTree(mx_quadTree, 0, output);
+		treeOutput.textContent = output.join('\n');
+	}
+
+	function traverseTree(node, level, output) {
+		output.push(`Points: ${JSON.stringify(node.points)}`);
+		if (node.divided) {
+			for (let child of node.nodes) {
+				traverseTree(child, level + 1, output);
+			}
+		}
+	}
+
+
+
+</script>
+
+</body>
+</html>

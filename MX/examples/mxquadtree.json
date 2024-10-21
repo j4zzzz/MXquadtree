@@ -1,0 +1,57 @@
+{
+"name": "Root",
+"children": [
+{ "name": "Node",
+"children": [
+{ "name": "Node",
+"children": [
+{ "name": "Node",
+"children": [
+{ "name": "Node",
+"children": [
+{ "name": "(3,4)" },
+]
+},
+]
+},
+]
+},
+{ "name": "Node",
+"children": [
+{ "name": "Node",
+"children": [
+{ "name": "Node",
+"children": [
+{ "name": "(5,8)" },
+]
+},
+]
+},
+]
+},
+{ "name": "Node",
+"children": [
+{ "name": "Node",
+"children": [
+{ "name": "Node",
+"children": [
+{ "name": "(10,10)" },
+]
+},
+]
+},
+{ "name": "Node",
+"children": [
+{ "name": "Node",
+"children": [
+{ "name": "(12,14)" },
+]
+},
+]
+},
+]
+},
+]
+},
+]
+}
